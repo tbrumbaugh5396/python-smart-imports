@@ -1,0 +1,42 @@
+
+# Extensions
+
+# dmg
+*.dmg
+
+# spec
+*.spec
+
+# egg
+*.egg
+*.egg-info
+
+# app
+*.app
+
+# db
+*.db
+
+## Hidden files
+.DS_Store
+
+## Folders
+
+# pycache
+__pycache__/
+
+# venv
+venv/
+
+# instance
+instance/
+
+# build
+build/
+
+# dist
+dist/
+
+# logs
+*.log
+*.log*

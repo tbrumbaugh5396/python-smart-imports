@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""
+Generate requirements-dev.txt for Smart Import
+"""
+import subprocess
+import sys
+
+def main():
+    """Generate requirements-dev.txt with development dependencies"""
+    try:
+        print("📋 Generating requirements-dev.txt...")
+        
+        # Common development dependencies for GUI applications
+        dev_packages = [
+            "pytest>=7.0.0",
+            "pytest-cov>=4.0.0",
+            "flake8>=5.0.0",
+            "black>=22.0.0",
+            "mypy>=1.0.0",
+            "build>=0.8.0",
+            "wheel>=0.38.0",
+            "twine>=4.0.0",
+            "pillow>=9.0.0",  # For icon generation
+            "setuptools>=65.0.0"
+        ]
+        
+        # Also include current frozen requirements
+        result = subprocess.run([sys.executable, "-m", "pip", "freeze"], 
+                              capture_output=True, text=True, check=True)
+        current_packages = result.stdout.strip().split('\n')
+        
+        # Combine and deduplicate
+        all_packages = list(set(dev_packages + current_packages))
+        all_packages.sort()
+        
+        with open("requirements-dev.txt", "w") as f:
+            f.write("# Development dependencies for Smart Import\n")
+            f.write("# Install with: pip install -r requirements-dev.txt\n\n")
+            for package in all_packages:
+                if package.strip():
+                    f.write(f"{package}\n")
+        
+        print("✅ requirements-dev.txt generated successfully")
+        
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error generating requirements-dev.txt: {e}")
+        return 1
+    
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

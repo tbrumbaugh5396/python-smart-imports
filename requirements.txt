@@ -1,0 +1,7 @@
+# Smart Import Requirements
+# 
+# Smart Import uses only Python standard library modules and has no external dependencies.
+# This file is provided for compatibility with pip and packaging tools.
+#
+# For development dependencies, see requirements-dev.txt or install with:
+# pip install -e ".[dev]"
