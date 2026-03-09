@@ -1,219 +1,296 @@
-# Smart Import
+# graphns — Graph-based namespaces with OCaml-style modules for Python
 
-A Python utility for intelligent module imports that works whether files are run directly or as part of a package.
+A Python library that gives you OCaml-style module semantics — signatures,
+functors, `open`, qualified access, and context algebra — backed by a live
+program graph that tracks every import, definition, call, and membership edge.
 
-## Overview
-
-Smart Import solves the common problem of Python modules that fail to import when run as scripts versus when imported as part of a package. It provides a simple function that dynamically adjusts the import path to ensure modules can be imported consistently in both contexts.
-
-## Features
-
-- **Dynamic import resolution**: Automatically handles both script and package execution contexts
-- **Zero dependencies**: Uses only Python standard library modules
-- **Simple API**: Just one function to replace problematic imports
-- **Cross-platform**: Works on Windows, macOS, and Linux
-- **Python 3.8+**: Compatible with modern Python versions
-
-## Installation
-
-### From PyPI (when published)
-```bash
-pip install smart-import
+```
+pip install graphns   # (or: pip install -e . from source)
 ```
 
-### From Source
-```bash
-git clone https://github.com/your-username/smart-import.git
-cd smart-import
-pip install -e .
-```
+---
 
-## Usage
-
-### Basic Usage
-
-Replace problematic imports with `smart_import()`:
+## Quick start
 
 ```python
-# Instead of this (which might fail):
-# from myproject.utils.helpers import some_function
+from graphns import Sig, Module, functor, open_module, namespace
 
-# Use this:
-from smart_import import smart_import
-helpers = smart_import('myproject.utils.helpers')
-some_function = helpers.some_function
+# 1. Define a signature (like an OCaml .mli / module type)
+class MathSig(Sig):
+    sqrt:  callable
+    floor: callable
+    pi:    float
+
+# 2. Load a module sealed against the signature
+Math = Module("math", sig=MathSig)
+Math.sqrt(16)       # → 4.0
+Math.floor(3.7)     # → 3
+Math.pi             # → 3.14159…
+Math.gcd            # → AttributeError — not in sig, hidden
+
+# 3. OCaml-style open — inject into current namespace
+open_module("math", globals())
+print(sqrt(9))      # → 3.0  (now in scope)
+
+# 4. Qualified access always works
+Math2 = namespace.ocaml_import("math", alias="Math2")
+Math2.sqrt(25)      # → 5.0
 ```
 
-### With Custom Package Root
+---
 
-If auto-detection doesn't work, specify the package root manually:
+## Signatures (`Sig`)
+
+A `Sig` is an explicit public interface, like an OCaml `module type` or `.mli` file.
 
 ```python
-from smart_import import smart_import
-module = smart_import('myproject.utils.helpers', package_root='/path/to/project')
+from graphns import Sig, SigViolation
+
+class OrdSig(Sig):
+    compare: callable   # (a, b) -> int
+
+class CollectionSig(Sig):
+    empty:   list
+    add:     callable
+    member:  callable
 ```
 
-## How It Works
-
-Safe Import uses Python's introspection capabilities to:
-
-1. **Detect execution context**: Checks if the calling file is being run as a script (`__name__ == "__main__"` and `__package__ is None`)
-2. **Auto-locate package root**: By default, assumes the package root is one directory up from the calling file
-3. **Adjust sys.path**: Temporarily adds the package root to Python's module search path
-4. **Import normally**: Uses `importlib.import_module()` with the corrected path
-
-## Common Use Cases
-
-### Project Structure
-```
-myproject/
-├── main.py                 # Entry point script
-├── myproject/
-│   ├── __init__.py
-│   ├── core/
-│   │   ├── __init__.py
-│   │   └── engine.py
-│   └── utils/
-│       ├── __init__.py
-│       └── helpers.py
-└── tests/
-    └── test_helpers.py
-```
-
-### Running as Script
-When `main.py` is run directly, imports from `myproject.utils` would normally fail. Safe Import resolves this:
+- Only annotated names are exposed — everything else is hidden.
+- Type annotations are runtime-checked (`callable`, `int`, `float`, …).
+- Sigs compose via inheritance.
 
 ```python
-# main.py
-from smart_import import smart_import
-
-# This works whether main.py is run directly or imported
-helpers = smart_import('myproject.utils.helpers')
-engine = smart_import('myproject.core.engine')
+class ExtendedMathSig(MathSig):   # inherits sqrt, floor, pi
+    ceil: callable
 ```
 
-### In Test Files
-Perfect for test files that need to import modules from the main package:
+---
+
+## Modules (`Module`)
 
 ```python
-# tests/test_helpers.py
-from smart_import import smart_import
+from graphns import Module
 
-# Works regardless of how tests are run
-helpers = smart_import('myproject.utils.helpers')
+# From a Python module path
+m = Module("os.path")
+m.join("/usr", "local")
 
-def test_helper_function():
-    assert helpers.some_function() == expected_result
+# Sealed against a signature
+m = Module("math", sig=MathSig)
+
+# From a plain dict (no file needed)
+m = Module.from_dict("MyMath", {
+    "add": lambda a, b: a + b,
+    "PI":  3.14159,
+})
+m.add(1, 2)   # → 3
+m["PI"]       # → 3.14159
 ```
 
-### Using the Example Script
-The `examples/smart_import_helper.py` script demonstrates how to use smart_import:
+Private names (`_*`) are always hidden regardless of sig.
+
+---
+
+## `open_module` — OCaml-style `open`
+
+```python
+from graphns import open_module
+
+open_module("math", globals())      # like OCaml: open Math
+print(sqrt(4))   # → 2.0
+
+# With a signature (only sig members are injected)
+class S(Sig):
+    sqrt: callable
+
+open_module("math", globals(), sig=S)
+# sqrt is in scope; floor, pi, etc. are not
+```
+
+---
+
+## Functors — modules parameterised by modules
+
+OCaml:
+```ocaml
+module MakeSet (Ord : ORDERED_TYPE) = struct … end
+```
+
+graphns:
+```python
+from graphns import functor, Sig, Module
+
+class OrdSig(Sig):
+    compare: callable
+
+class SetSig(Sig):
+    empty:   list
+    add:     callable
+    member:  callable
+
+@functor(input_sig=OrdSig, output_sig=SetSig)
+def MakeSet(Ord):
+    empty = []
+    def add(s, x):
+        return s + [x] if x not in s else s
+    def member(s, x):
+        return x in s
+    return {"empty": empty, "add": add, "member": member}
+
+IntOrd  = Module.from_dict("IntOrd",  {"compare": lambda a, b: a - b})
+StrOrd  = Module.from_dict("StrOrd",  {"compare": lambda a, b: (a > b) - (a < b)})
+
+IntSet  = MakeSet(IntOrd,  name="IntSet")
+StrSet  = MakeSet(StrOrd,  name="StrSet")
+
+s = IntSet.add(IntSet.empty, 5)
+s = IntSet.add(s, 10)
+IntSet.member(s, 5)   # → True
+```
+
+Functors validate input modules against `input_sig` and output dicts
+against `output_sig`. All instances are tracked in the program graph.
+
+---
+
+## Graph contexts — semantic regions
+
+Beyond individual modules, you can organise definitions into **named
+semantic regions** that overlap freely (same node, multiple contexts):
+
+```python
+from graphns import namespace
+
+# Create contexts
+algo  = namespace.context("Algorithm")
+arrs  = namespace.context("Arrays")
+
+# Register functions in multiple contexts
+algo.add(sorted, "sort")
+algo.add(lambda xs, x: x in xs, "search")
+arrs.add(sorted, "sort")   # same node — no duplication
+arrs.add(map,    "map")
+
+# Context algebra
+sorting = namespace.intersect("Algorithm", "Arrays", name="Sorting")
+# sorting.members() → [sort]  (the only shared member)
+
+all_ops = namespace.union("Algorithm", "Arrays", name="AllOps")
+safe    = namespace.diff("Arrays", "Sorting", name="SafeArrays")
+# SafeArrays has map but not sort
+```
+
+### Morphisms
+
+```python
+m = namespace.morphism(
+    "SqlToFP",
+    src="SQL", tgt="Functional",
+    mapping={"select": "map", "where_": "filter", "fold": "reduce"},
+)
+m.apply("select")   # → the "map" function from Functional context
+```
+
+### Active context resolution
+
+```python
+with namespace.active("Algorithm", "Arrays"):
+    fn = namespace.resolve("sort")   # unambiguous → returns the function
+    # if same name exists in both active contexts → NameError with hint
+```
+
+---
+
+## `smart_import` — drop-in replacement
+
+`smart_import` is an enhanced version of the original `python-smart-imports`
+function. It solves the script-vs-package path problem and adds graph tracking,
+sig enforcement, aliasing, and optional open.
+
+```python
+from graphns import smart_import
+
+# Basic — works whether run as script or package
+helpers = smart_import("myproject.utils.helpers")
+helpers.some_function()
+
+# With signature
+helpers = smart_import("myproject.utils.helpers", sig=HelpersSig)
+
+# Alias
+H = smart_import("myproject.utils.helpers", alias="H")
+
+# Open into current namespace
+smart_import("math", open_=True, caller_ns=globals())
+print(sqrt(16))   # now in scope
+```
+
+---
+
+## The program graph
+
+Every import, definition, call, and context membership is a node or edge
+in the underlying `Graph`. You can query it directly:
+
+```python
+g = namespace.graph
+
+# What contexts does "sort" belong to?
+g.contexts_of("sort")
+
+# What does "mymod.compute" call?
+g.callees_of("mymod.compute")
+
+# Transitive dependencies
+g.transitive_deps("myapp.main")
+
+# Unused functions (defined but never called)
+g.find_unused()
+
+# Analyse source code directly
+g.analyse_source(open("myfile.py").read(), "myfile")
+
+# Print the whole graph
+g.print_graph()
+print(namespace.summary())
+```
+
+---
+
+## Architecture
+
+```
+graphns/
+├── __init__.py      — public API
+├── graph.py         — directed labelled program graph (nodes + edges)
+├── sig.py           — Sig metaclass, SigViolation, runtime type checking
+├── module.py        — Module: sealed, export-filtered namespace objects
+├── functor.py       — @functor decorator: module factories
+├── ns.py            — Namespace, GraphContext, Morphism, open_module
+└── smart.py         — smart_import: graph-aware path-fixing importer
+```
+
+### Three levels of "context"
+
+| Level | Name | What it contains | Lives in |
+|---|---|---|---|
+| Outermost | **Graph context** | Definition references (GRefs / nodes) | `CoreEnv` graph store |
+| Middle | **Graded context Γ** | Variable bindings with resource grades | Type checker `Ctx` stack |
+| Innermost | **Local typing context** | Lambda-bound De Bruijn variables | Elaborator, gone after elab |
+
+The graph context is about *organisation*. The graded context is about
+*resource discipline*. They are orthogonal and compose cleanly.
+
+---
+
+## Requirements
+
+- Python 3.10+
+- No external dependencies
+
+## Running tests
 
 ```bash
-python examples/smart_import_helper.py
+python tests/test_graphns.py
+# 42 passed, 0 failed
 ```
-
-## API Reference
-
-### `smart_import(module_path, package_root=None)`
-
-Dynamically imports a module using an absolute import path.
-
-**Parameters:**
-- `module_path` (str): Dotted path to the module (e.g., 'myproject.utils.helpers')
-- `package_root` (str, optional): Path to the package root directory. If not provided, auto-detects by assuming it's one directory up from the calling file.
-
-**Returns:**
-- `module`: The imported module object
-
-**Raises:**
-- `ImportError`: If the module cannot be found or imported
-
-## Development
-
-### Setting Up Development Environment
-
-```bash
-git clone https://github.com/your-username/smart-import.git
-cd smart-import
-pip install -e ".[dev]"
-```
-
-### Running Tests
-
-```bash
-pytest tests/
-```
-
-### Code Formatting
-
-```bash
-black src/
-flake8 src/
-mypy src/
-```
-
-### Building Distribution
-
-```bash
-python -m build
-```
-
-## Scripts
-
-The `scripts/` directory contains utility scripts:
-
-- `create_app_bundle.py`: Creates macOS application bundle
-- `create_icon.py`: Generates application icons
-- `create_requirements.txt`: Generates requirements.txt from current environment
-- `create_requirements_dev.txt`: Generates development requirements
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes and add tests
-4. Run the test suite: `pytest`
-5. Commit your changes: `git commit -am 'Add some feature'`
-6. Push to the branch: `git push origin feature-name`
-7. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Changelog
-
-### Version 1.0.0
-- Initial release
-- Basic safe import functionality
-- Command line interface
-- Cross-platform support
-
-## Troubleshooting
-
-### Common Issues
-
-**Import still fails after using smart_import:**
-- Check that the `module_path` is correct
-- Verify the `package_root` points to the correct directory
-- Ensure all parent directories have `__init__.py` files
-
-**Auto-detection of package root doesn't work:**
-- Manually specify the `package_root` parameter
-- Check your project structure matches expected layout
-
-**Module found but attributes missing:**
-- Ensure the module is properly initialized
-- Check for circular imports in your modules
-
-### Getting Help
-
-- Check the [Issues](https://github.com/your-username/smart-import/issues) page
-- Create a new issue with a minimal reproduction case
-- Include your Python version and operating system
-
-## Related Projects
-
-- [importlib](https://docs.python.org/3/library/importlib.html) - Python's standard import machinery
-- [pathlib](https://docs.python.org/3/library/pathlib.html) - Object-oriented filesystem paths
