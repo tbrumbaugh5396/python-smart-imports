@@ -1,4 +1,4 @@
-from smart_import import smart_import
+from graph_based_namespaces import smart_import
 
 helper = smart_import("helper")
 

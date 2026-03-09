@@ -1,11 +1,11 @@
-"""tests/test_graphns.py — Test suite for graphns"""
+"""tests/test_graph_based_namespaces.py — Test suite for graph_based_namespaces"""
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../source"))
 
 import math as _math
-import graphns
-from graphns import Graph, Sig, SigViolation, Module, ModuleError, functor, open_module, namespace
-from graphns.ns import Namespace
+import graph_based_namespaces
+from graph_based_namespaces import Graph, Signature, SignatureViolation, Module, ModuleError, functor, open_module, namespace
+from graph_based_namespaces.namespace import Namespace
 
 
 # ── Graph tests ───────────────────────────────────────────────
@@ -27,18 +27,18 @@ def test_graph_edges_to():
     g = Graph()
     g.add_node("A","module"); g.add_node("B","module")
     g.add_edge("A","calls","B")
-    assert g.edges_to("B","calls")[0].src == "A"
+    assert g.edges_to("B","calls")[0].source == "A"
 
 def test_graph_analyse_source():
     g = Graph()
-    src = """
+    source = """
 def add(a, b):
     return a + b
 def compute():
     x = add(1, 2)
     return x
 """
-    g.analyse_source(src, "mymod")
+    g.analyse_source(source, "mymod")
     assert g.get_node("mymod.compute") is not None
     calls = g.edges_from("mymod.compute", "calls")
     assert any(e.dst == "add" for e in calls)
@@ -53,35 +53,35 @@ def test_graph_context_membership():
     members = {n.name for n in g.members_of("Algorithm")}
     assert "sort" in members and "search" in members
 
-def test_graph_ctx_intersect():
+def test_graph_context_intersection():
     g = Graph()
     for n in ["sort","search","map","filter"]:
         g.add_node(n,"function")
     g.add_node("Algorithm","context"); g.add_node("Arrays","context")
     g.add_to_context("sort","Algorithm"); g.add_to_context("search","Algorithm")
     g.add_to_context("sort","Arrays");    g.add_to_context("map","Arrays")
-    g.ctx_intersect("Algorithm","Arrays","Sorting")
+    g.context_intersection("Algorithm","Arrays","Sorting")
     members = {n.name for n in g.members_of("Sorting")}
     assert members == {"sort"}
 
-def test_graph_ctx_union():
+def test_graph_context_union():
     g = Graph()
     for n in ["sort","map"]:
         g.add_node(n,"function")
     g.add_node("A","context"); g.add_node("B","context")
     g.add_to_context("sort","A"); g.add_to_context("map","B")
-    g.ctx_union("A","B","C")
+    g.context_union("A","B","C")
     members = {n.name for n in g.members_of("C")}
     assert members == {"sort","map"}
 
-def test_graph_ctx_diff():
+def test_graph_context_difference():
     g = Graph()
     for n in ["sort","search","map"]:
         g.add_node(n,"function")
     g.add_node("A","context"); g.add_node("B","context")
     for n in ["sort","search","map"]: g.add_to_context(n,"A")
     g.add_to_context("sort","B")
-    g.ctx_diff("A","B","C")
+    g.context_difference("A","B","C")
     members = {n.name for n in g.members_of("C")}
     assert "sort" not in members
     assert "search" in members and "map" in members
@@ -103,50 +103,50 @@ def test_graph_transitive_deps():
     assert "B" in deps and "C" in deps
 
 
-# ── Sig tests ─────────────────────────────────────────────────
+# ── Signature tests ─────────────────────────────────────────────────
 
-def test_sig_basic():
-    class MathSig(Sig):
+def test_signature_basic():
+    class MathSignature(Signature):
         sqrt:    callable
         floor:   callable
         pi:      float
 
     exports = {"sqrt": _math.sqrt, "floor": _math.floor, "pi": _math.pi,
                "_hidden": "secret", "extra": 42}
-    result = MathSig.check(exports)
+    result = MathSignature.check(exports)
     assert set(result.keys()) == {"sqrt","floor","pi"}
     assert "extra"   not in result
     assert "_hidden" not in result
 
-def test_sig_missing_member():
-    class S(Sig):
+def test_signature_missing_member():
+    class S(Signature):
         add: callable
 
     try:
         S.check({})
         assert False, "should raise"
-    except SigViolation as e:
+    except SignatureViolation as e:
         assert "add" in str(e)
 
-def test_sig_wrong_type():
-    class S(Sig):
+def test_signature_wrong_type():
+    class S(Signature):
         add: callable
 
     try:
         S.check({"add": 42})   # 42 is not callable
         assert False, "should raise"
-    except SigViolation as e:
+    except SignatureViolation as e:
         assert "add" in str(e)
 
-def test_sig_is_compatible():
-    class S(Sig):
+def test_signature_is_compatible():
+    class S(Signature):
         sqrt: callable
 
     assert     S.is_compatible({"sqrt": _math.sqrt})
     assert not S.is_compatible({})
 
-def test_sig_inheritance():
-    class Base(Sig):
+def test_signature_inheritance():
+    class Base(Signature):
         add: callable
 
     class Extended(Base):
@@ -173,14 +173,14 @@ def test_module_hides_private():
     except AttributeError:
         pass
 
-def test_module_with_sig():
-    class MathSig(Sig):
+def test_module_with_signature():
+    class MathSignature(Signature):
         sqrt:  callable
         floor: callable
 
-    m = Module("math", sig=MathSig)
+    m = Module("math", signature=MathSignature)
     assert m.sqrt(9) == 3.0
-    # Members not in sig should not be exposed
+    # Members not in signature should not be exposed
     try:
         _ = m.pi
         assert False
@@ -227,15 +227,15 @@ def test_module_bad_path():
 # ── Functor tests ─────────────────────────────────────────────
 
 def test_functor_basic():
-    class OrdSig(Sig):
+    class OrdSignature(Signature):
         compare: callable
 
-    class SetSig(Sig):
+    class SetSignature(Signature):
         empty:  list
         add:    callable
         member: callable
 
-    @functor(input_sig=OrdSig, output_sig=SetSig)
+    @functor(input_signature=OrdSignature, output_signature=SetSignature)
     def MakeSet(Ord):
         empty = []
         def add(s, x):
@@ -257,16 +257,16 @@ def test_functor_repr():
     assert "MakeMap" in repr(MakeMap)
 
 def test_functor_bad_input():
-    class S(Sig):
+    class S(Signature):
         required: callable
 
-    @functor(input_sig=S)
+    @functor(input_signature=S)
     def F(mod): return {}
 
     try:
         F(Module.from_dict("bad", {"other": 1}))
         assert False
-    except SigViolation:
+    except SignatureViolation:
         pass
 
 def test_functor_instances_tracked():
@@ -288,14 +288,14 @@ def test_open_module_injects():
     assert "sqrt"  in ns
     assert "floor" in ns
 
-def test_open_module_with_sig():
-    class S(Sig):
+def test_open_module_with_signature():
+    class S(Signature):
         sqrt: callable
 
     ns = {}
-    open_module("math", ns, sig=S)
+    open_module("math", ns, signature=S)
     assert "sqrt"  in ns
-    assert "floor" not in ns   # not in sig
+    assert "floor" not in ns   # not in signature
 
 def test_namespace_ocaml_import():
     ns2  = Namespace()
@@ -320,7 +320,7 @@ def test_namespace_context_algebra():
     g.add_to_context("sort","Algo2");   g.add_to_context("search","Algo2")
     g.add_to_context("sort","Arrs2");   g.add_to_context("map","Arrs2")
 
-    sorting = ns2.intersect("Algo2","Arrs2","Sorting2")
+    sorting = ns2.intersection("Algo2","Arrs2")#,"Sorting2")
     members = {n.name for n in sorting.members()}
     assert members == {"sort"}
 
@@ -335,7 +335,7 @@ def test_namespace_morphism():
     g.add_to_context("map",    "FP2")
     g.add_to_context("filter", "FP2")
 
-    m = ns2.morphism("SqlToFP2", src="SQL2", tgt="FP2",
+    m = ns2.morphism("SqlToFP2", source="SQL2", target="FP2",
                      mapping={"select": "map", "where_": "filter"})
     result = m.apply("select")
     assert result is _math.floor
@@ -360,7 +360,7 @@ def test_namespace_ambiguity_error():
     # fn_a also in C2 → same name "fn_a" in two active contexts
     g.add_node("fn_a_dup","function",value=3)
     g.add_to_context("fn_a_dup","C2")
-    # No ambiguity here since names differ — test uniqueness resolution
+    # No ambiguity here since names difference — test uniqueness resolution
     with ns2.active("C1"):
         val = ns2.resolve("fn_a")
         assert val == 1
@@ -380,28 +380,28 @@ def test_graph_context_repr():
 # ── smart_import tests ────────────────────────────────────────
 
 def test_smart_import_basic():
-    from graphns.smart import smart_import
+    from graph_based_namespaces.smart_import import smart_import
     m = smart_import("math")
     assert m.sqrt(9) == 3.0
 
 def test_smart_import_alias():
-    from graphns.smart import smart_import
+    from graph_based_namespaces.smart_import import smart_import
     M = smart_import("math", alias="SMath")
     assert M._name == "SMath"
 
-def test_smart_import_with_sig():
-    from graphns.smart import smart_import
+def test_smart_import_with_signature():
+    from graph_based_namespaces.smart_import import smart_import
 
-    class S(Sig):
+    class S(Signature):
         sqrt: callable
 
-    m = smart_import("math", sig=S)
+    m = smart_import("math", signature=S)
     assert m.sqrt(4) == 2.0
     try: _ = m.floor; assert False
     except AttributeError: pass
 
 def test_smart_import_open():
-    from graphns.smart import smart_import
+    from graph_based_namespaces.smart_import import smart_import
     ns = {}
     smart_import("math", open_=True, caller_ns=ns)
     assert "sqrt" in ns

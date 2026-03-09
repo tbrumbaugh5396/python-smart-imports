@@ -1,14 +1,14 @@
 """
-examples.py — graphns usage examples
+examples.py — graph_based_namespaces usage examples
 
 Run with:
     python examples.py
 """
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "source/smart_import"))
 
-from graphns import Sig, Module, functor, open_module, namespace, smart_import
-from graphns.ns import Namespace
+from graph_based_namespaces import Signature, Module, functor, open_module, namespace, smart_import
+from graph_based_namespaces.namespace import Namespace
 
 
 SEP = "─" * 60
@@ -35,15 +35,15 @@ print(f"  Math repr       = {Math}")
 # ═══════════════════════════════════════════════════════════════
 # 2. Module with a Signature (OCaml module type)
 # ═══════════════════════════════════════════════════════════════
-section("2. Module with Sig — only declared members exposed")
+section("2. Module with Signature — only declared members exposed")
 
-class MathSig(Sig):
+class MathSignature(Signature):
     sqrt:  callable
     floor: callable
     ceil:  callable
     pi:    float
 
-SealedMath = Module("math", sig=MathSig)
+SealedMath = Module("math", signature=MathSignature)
 print(f"  SealedMath.sqrt(25)  = {SealedMath.sqrt(25)}")
 print(f"  SealedMath.pi        = {SealedMath.pi:.5f}")
 print(f"  Keys exposed         = {SealedMath.keys()}")
@@ -87,13 +87,13 @@ print(f"  sqrt(49)   via open = {local_ns['sqrt'](49)}")
 print(f"  cos(0)     via open = {local_ns['cos'](0)}")
 
 # Open with sig — only declared names land in namespace
-class TrigSig(Sig):
+class TrigSignature(Signature):
     sin: callable
     cos: callable
     tan: callable
 
 trig_ns = {}
-open_module("math", trig_ns, sig=TrigSig)
+open_module("math", trig_ns, signature=TrigSignature)
 print(f"  Keys after open(sig) = {sorted(trig_ns.keys())}")
 print(f"  'sqrt' excluded      = {'sqrt' not in trig_ns} ✓")
 
@@ -110,12 +110,12 @@ Os = ns.ocaml_import("os.path", alias="Os")
 print(f"  Os.join('a','b') = {Os.join('a','b')}")
 
 # With sig and alias — like: module M : SIG = ...
-class OsSig(Sig):
+class OsSignature(Signature):
     join:    callable
     exists:  callable
     dirname: callable
 
-OsPath = ns.ocaml_import("os.path", alias="OsPath", sig=OsSig)
+OsPath = ns.ocaml_import("os.path", alias="OsPath", signature=OsSignature)
 print(f"  OsPath keys      = {OsPath.keys()}")
 print(f"  OsPath.exists('/') = {OsPath.exists('/')}")
 
@@ -130,16 +130,16 @@ print(f"  After open_, 'sqrt' in ns = {'sqrt' in opened_ns} ✓")
 # ═══════════════════════════════════════════════════════════════
 section("6. Sig inheritance — composing signatures")
 
-class BaseSig(Sig):
+class BaseSignature(Signature):
     add: callable
     sub: callable
 
-class ExtendedSig(BaseSig):   # inherits add, sub
+class ExtendedSignature(BaseSignature):   # inherits add, sub
     mul: callable
     div: callable
 
-print(f"  BaseSig members    = {BaseSig.members()}")
-print(f"  ExtendedSig members = {ExtendedSig.members()}")
+print(f"  BaseSig members    = {BaseSignature.members()}")
+print(f"  ExtendedSig members = {ExtendedSignature.members()}")
 
 ops = Module.from_dict("Ops", {
     "add": lambda a,b: a+b,
@@ -147,7 +147,7 @@ ops = Module.from_dict("Ops", {
     "mul": lambda a,b: a*b,
     "div": lambda a,b: a/b,
     "mod": lambda a,b: a%b,   # not in sig — will be hidden
-}, sig=ExtendedSig)
+}, signature=ExtendedSignature)
 
 print(f"  ops.add(10,3)  = {ops.add(10,3)}")
 print(f"  ops.mul(4,5)   = {ops.mul(4,5)}")
@@ -160,16 +160,16 @@ print(f"  'mod' hidden   = {'mod' not in ops} ✓")
 section("7. Functors — parameterised module factories")
 
 # Define signatures
-class CompareSig(Sig):
+class CompareSignature(Signature):
     compare: callable   # (a, b) -> -1 | 0 | 1
 
-class SortedListSig(Sig):
+class SortedListSignature(Signature):
     empty:   list
     insert:  callable   # insert(lst, x) -> sorted list
     to_list: callable   # to_list(lst) -> list
 
 # Define the functor
-@functor(input_sig=CompareSig, output_sig=SortedListSig)
+@functor(input_signature=CompareSignature, output_signature=SortedListSignature)
 def MakeSortedList(Ord):
     def insert(lst, x):
         for i, el in enumerate(lst):
@@ -232,15 +232,15 @@ print(f"  Algorithm members: {[n.name for n in algo.members()]}")
 print(f"  Arrays members:    {[n.name for n in arrs.members()]}")
 
 # Intersection — only what both share
-sorting = ns2.intersect("Algorithm","Arrays", name="Sorting")
+sorting = ns2.intersection("Algorithm","Arrays")#, name="Sorting")
 print(f"  Sorting = Algo ∩ Arrays: {[n.name for n in sorting.members()]}")
 
 # Union — everything from either
-all_ops = ns2.union("Algorithm","Arrays", name="AllOps")
+all_ops = ns2.union("Algorithm","Arrays")#, name="AllOps")
 print(f"  AllOps  = Algo ∪ Arrays: {sorted(n.name for n in all_ops.members())}")
 
 # Difference — Arrays minus what's in Sorting
-safe = ns2.diff("Arrays","Sorting", name="SafeArrays")
+safe = ns2.difference("Arrays","Sorting")#, name="SafeArrays")
 print(f"  SafeArrays = Arrays − Sorting: {[n.name for n in safe.members()]}")
 
 
@@ -296,7 +296,7 @@ ns4.context("Functional")
 for n in ["map_","filter_","reduce_"]:
     g4.add_to_context(n, "Functional")
 
-morph = ns4.morphism("SqlToFP", src="SQL", tgt="Functional",
+morph = ns4.morphism("SqlToFP", source="SQL", target="Functional",
                      mapping={"select":"map_", "where_":"filter_", "fold":"reduce_"})
 
 map_fn    = morph.apply("select")
@@ -326,12 +326,12 @@ Json = smart_import("json", alias="Json")
 print(f"  Json._name       = {Json._name}")
 print(f"  Json.dumps([1,2]) = {Json.dumps([1,2])}")
 
-# With sig
-class JsonSig(Sig):
+# With signature
+class JsonSignature(Signature):
     dumps: callable
     loads: callable
 
-SafeJson = smart_import("json", sig=JsonSig, alias="SafeJson")
+SafeJson = smart_import("json", signature=JsonSignature, alias="SafeJson")
 print(f"  SafeJson keys    = {SafeJson.keys()}")
 
 # Open into a local dict
@@ -347,7 +347,7 @@ section("12. Program graph — queries and analysis")
 
 # Analyse a piece of source code
 g5 = namespace.graph
-src = '''
+source = '''
 import os
 import math
 
@@ -362,7 +362,7 @@ def helper(n):
 def unused_fn():
     return 42
 '''
-g5.analyse_source(src, "mymodule")
+g5.analyse_source(source, "mymodule")
 
 # What does compute call?
 calls = g5.callees_of("mymodule.compute")

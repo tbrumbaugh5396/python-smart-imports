@@ -1,11 +1,11 @@
-# graphns — Graph-based namespaces with OCaml-style modules for Python
+# graph_based_namespaces — Graph-based namespaces with OCaml-style modules for Python
 
 A Python library that gives you OCaml-style module semantics — signatures,
 functors, `open`, qualified access, and context algebra — backed by a live
 program graph that tracks every import, definition, call, and membership edge.
 
 ```
-pip install graphns   # (or: pip install -e . from source)
+pip install graph_based_namespaces   # (or: pip install -e . from source)
 ```
 
 ---
@@ -13,20 +13,20 @@ pip install graphns   # (or: pip install -e . from source)
 ## Quick start
 
 ```python
-from graphns import Sig, Module, functor, open_module, namespace
+from graph_based_namespaces import Signature, Module, functor, open_module, namespace
 
 # 1. Define a signature (like an OCaml .mli / module type)
-class MathSig(Sig):
+class MathSignature(Signature):
     sqrt:  callable
     floor: callable
     pi:    float
 
 # 2. Load a module sealed against the signature
-Math = Module("math", sig=MathSig)
+Math = Module("math", signature=MathSignature)
 Math.sqrt(16)       # → 4.0
 Math.floor(3.7)     # → 3
 Math.pi             # → 3.14159…
-Math.gcd            # → AttributeError — not in sig, hidden
+Math.gcd            # → AttributeError — not in signature, hidden
 
 # 3. OCaml-style open — inject into current namespace
 open_module("math", globals())
@@ -39,17 +39,17 @@ Math2.sqrt(25)      # → 5.0
 
 ---
 
-## Signatures (`Sig`)
+## Signatures (`Signature`)
 
-A `Sig` is an explicit public interface, like an OCaml `module type` or `.mli` file.
+A `Signature` is an explicit public interface, like an OCaml `module type` or `.mli` file.
 
 ```python
-from graphns import Sig, SigViolation
+from graph_based_namespaces import Signature, SignatureViolation
 
-class OrdSig(Sig):
+class OrdSignature(Signature):
     compare: callable   # (a, b) -> int
 
-class CollectionSig(Sig):
+class CollectionSignature(Signature):
     empty:   list
     add:     callable
     member:  callable
@@ -57,10 +57,10 @@ class CollectionSig(Sig):
 
 - Only annotated names are exposed — everything else is hidden.
 - Type annotations are runtime-checked (`callable`, `int`, `float`, …).
-- Sigs compose via inheritance.
+- Signatures compose via inheritance.
 
 ```python
-class ExtendedMathSig(MathSig):   # inherits sqrt, floor, pi
+class ExtendedMathSignature(MathSignature):   # inherits sqrt, floor, pi
     ceil: callable
 ```
 
@@ -69,14 +69,14 @@ class ExtendedMathSig(MathSig):   # inherits sqrt, floor, pi
 ## Modules (`Module`)
 
 ```python
-from graphns import Module
+from graph_based_namespaces import Module
 
 # From a Python module path
 m = Module("os.path")
 m.join("/usr", "local")
 
 # Sealed against a signature
-m = Module("math", sig=MathSig)
+m = Module("math", signature=MathSignature)
 
 # From a plain dict (no file needed)
 m = Module.from_dict("MyMath", {
@@ -87,23 +87,23 @@ m.add(1, 2)   # → 3
 m["PI"]       # → 3.14159
 ```
 
-Private names (`_*`) are always hidden regardless of sig.
+Private names (`_*`) are always hidden regardless of signature.
 
 ---
 
 ## `open_module` — OCaml-style `open`
 
 ```python
-from graphns import open_module
+from graph_based_namespaces import open_module
 
 open_module("math", globals())      # like OCaml: open Math
 print(sqrt(4))   # → 2.0
 
-# With a signature (only sig members are injected)
-class S(Sig):
+# With a signature (only signature members are injected)
+class S(Signature):
     sqrt: callable
 
-open_module("math", globals(), sig=S)
+open_module("math", globals(), signature=S)
 # sqrt is in scope; floor, pi, etc. are not
 ```
 
@@ -116,19 +116,19 @@ OCaml:
 module MakeSet (Ord : ORDERED_TYPE) = struct … end
 ```
 
-graphns:
+graph_based_namespaces:
 ```python
-from graphns import functor, Sig, Module
+from graph_based_namespaces import functor, Signature, Module
 
-class OrdSig(Sig):
+class OrdSignature(Signature):
     compare: callable
 
-class SetSig(Sig):
+class SetSignature(Signature):
     empty:   list
     add:     callable
     member:  callable
 
-@functor(input_sig=OrdSig, output_sig=SetSig)
+@functor(input_signature=OrdSignature, output_signature=SetSignature)
 def MakeSet(Ord):
     empty = []
     def add(s, x):
@@ -148,8 +148,8 @@ s = IntSet.add(s, 10)
 IntSet.member(s, 5)   # → True
 ```
 
-Functors validate input modules against `input_sig` and output dicts
-against `output_sig`. All instances are tracked in the program graph.
+Functors validate input modules against `input_signature` and output dicts
+against `output_signature`. All instances are tracked in the program graph.
 
 ---
 
@@ -159,7 +159,7 @@ Beyond individual modules, you can organise definitions into **named
 semantic regions** that overlap freely (same node, multiple contexts):
 
 ```python
-from graphns import namespace
+from graph_based_namespaces import namespace
 
 # Create contexts
 algo  = namespace.context("Algorithm")
@@ -172,11 +172,11 @@ arrs.add(sorted, "sort")   # same node — no duplication
 arrs.add(map,    "map")
 
 # Context algebra
-sorting = namespace.intersect("Algorithm", "Arrays", name="Sorting")
+sorting = namespace.intersection("Algorithm", "Arrays", name="Sorting")
 # sorting.members() → [sort]  (the only shared member)
 
 all_ops = namespace.union("Algorithm", "Arrays", name="AllOps")
-safe    = namespace.diff("Arrays", "Sorting", name="SafeArrays")
+safe    = namespace.difference("Arrays", "Sorting", name="SafeArrays")
 # SafeArrays has map but not sort
 ```
 
@@ -185,7 +185,7 @@ safe    = namespace.diff("Arrays", "Sorting", name="SafeArrays")
 ```python
 m = namespace.morphism(
     "SqlToFP",
-    src="SQL", tgt="Functional",
+    source="SQL", target="Functional",
     mapping={"select": "map", "where_": "filter", "fold": "reduce"},
 )
 m.apply("select")   # → the "map" function from Functional context
@@ -205,17 +205,17 @@ with namespace.active("Algorithm", "Arrays"):
 
 `smart_import` is an enhanced version of the original `python-smart-imports`
 function. It solves the script-vs-package path problem and adds graph tracking,
-sig enforcement, aliasing, and optional open.
+signature enforcement, aliasing, and optional open.
 
 ```python
-from graphns import smart_import
+from graph_based_namespaces import smart_import
 
 # Basic — works whether run as script or package
 helpers = smart_import("myproject.utils.helpers")
 helpers.some_function()
 
 # With signature
-helpers = smart_import("myproject.utils.helpers", sig=HelpersSig)
+helpers = smart_import("myproject.utils.helpers", signature=HelpersSignature)
 
 # Alias
 H = smart_import("myproject.utils.helpers", alias="H")
@@ -260,13 +260,13 @@ print(namespace.summary())
 ## Architecture
 
 ```
-graphns/
+graph_based_namespaces/
 ├── __init__.py      — public API
 ├── graph.py         — directed labelled program graph (nodes + edges)
-├── sig.py           — Sig metaclass, SigViolation, runtime type checking
+├── signature.py     — Signature metaclass, SignatureViolation, runtime type checking
 ├── module.py        — Module: sealed, export-filtered namespace objects
 ├── functor.py       — @functor decorator: module factories
-├── ns.py            — Namespace, GraphContext, Morphism, open_module
+├── namespace.py     — Namespace, GraphContext, Morphism, open_module
 └── smart.py         — smart_import: graph-aware path-fixing importer
 ```
 
@@ -291,6 +291,6 @@ The graph context is about *organisation*. The graded context is about
 ## Running tests
 
 ```bash
-python tests/test_graphns.py
+python tests/test_graph_based_namespaces.py
 # 42 passed, 0 failed
 ```

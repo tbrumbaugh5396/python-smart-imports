@@ -1,13 +1,13 @@
 """
-graphns/functor.py — Module functors (OCaml-style module factories).
+graph_based_namespaces/functor.py — Module functors (OCaml-style module factories).
 
 A functor is a function from modules to modules.
 
     OCaml:
         module MakeSet (Ord : ORDERED_TYPE) = struct ... end
 
-    graphns:
-        @functor(input_sig=OrdSig, output_sig=SetSig)
+    graph_based_namespaces:
+        @functor(input_signature=OrdSignature, output_signature=SetSignature)
         def MakeSet(Ord):
             def add(s, x): ...
             def mem(s, x): return Ord.compare(x, x) == 0
@@ -17,22 +17,22 @@ A functor is a function from modules to modules.
         IntSet.mem(my_set, 5)
 
 The @functor decorator:
-  - validates the input module against input_sig
-  - validates the output dict against output_sig
+  - validates the input module against input_signature
+  - validates the output dict against output_signature
   - wraps the result as a Module
   - records the instantiation in the graph
 """
 from __future__ import annotations
 from typing import Any, Callable, Optional, Type
 
-from graphns.sig    import Sig, SigViolation
-from graphns.module import Module
-from graphns.graph  import Graph, NODE_FUNCTOR, NODE_MODULE, REL_INSTANCE
+from graph_based_namespaces.signature    import Signature, SignatureViolation
+from graph_based_namespaces.module       import Module
+from graph_based_namespaces.graph        import Graph, NODE_FUNCTOR, NODE_MODULE, REL_INSTANCE
 
 
 def functor(
-    input_sig:  Optional[Type[Sig]] = None,
-    output_sig: Optional[Type[Sig]] = None,
+    input_signature:  Optional[Type[Signature]] = None,
+    output_signature: Optional[Type[Signature]] = None,
     graph:      Optional[Graph]     = None,
 ) -> Callable:
     """
@@ -43,7 +43,7 @@ def functor(
 
     Example:
 
-        @functor(input_sig=OrdSig, output_sig=SetSig)
+        @functor(input_signature=OrdSignature, output_signature=SetSignature)
         def MakeSet(Ord):
             ...
             return {"empty": set(), "add": add, "mem": mem}
@@ -51,7 +51,7 @@ def functor(
         IntSet = MakeSet(IntOrd)
     """
     def decorator(fn: Callable) -> "_Functor":
-        return _Functor(fn, input_sig, output_sig, graph)
+        return _Functor(fn, input_signature, output_signature, graph)
     return decorator
 
 
@@ -64,13 +64,13 @@ class _Functor:
     def __init__(
         self,
         fn:         Callable,
-        input_sig:  Optional[Type[Sig]],
-        output_sig: Optional[Type[Sig]],
+        input_signature:  Optional[Type[Signature]],
+        output_signature: Optional[Type[Signature]],
         graph:      Optional[Graph],
     ) -> None:
         self._fn         = fn
-        self._input_sig  = input_sig
-        self._output_sig = output_sig
+        self._input_signature  = input_signature
+        self._output_signature = output_signature
         self._graph      = graph
         self.__name__    = fn.__name__
         self.__doc__     = fn.__doc__
@@ -78,8 +78,8 @@ class _Functor:
 
         if graph is not None:
             graph.add_node(fn.__name__, NODE_FUNCTOR,
-                           input_sig  = input_sig.__name__  if input_sig  else None,
-                           output_sig = output_sig.__name__ if output_sig else None)
+                           input_signature  = input_signature.__name__  if input_signature  else None,
+                           output_signature = output_signature.__name__ if output_signature else None)
 
     def __call__(self, *module_args: Any, name: Optional[str] = None) -> Module:
         """
@@ -91,13 +91,13 @@ class _Functor:
         validated_args = []
         for arg in module_args:
             if isinstance(arg, Module):
-                if self._input_sig is not None:
-                    # Re-check that the module satisfies input_sig
-                    self._input_sig.check(arg.exports())
+                if self._input_signature is not None:
+                    # Re-check that the module satisfies input_signature
+                    self._input_signature.check(arg.exports())
                 validated_args.append(arg)
             elif isinstance(arg, dict):
-                if self._input_sig is not None:
-                    self._input_sig.check(arg)
+                if self._input_signature is not None:
+                    self._input_signature.check(arg)
                 # Wrap bare dict as anonymous module
                 validated_args.append(Module.from_dict("<arg>", arg))
             else:
@@ -120,7 +120,7 @@ class _Functor:
             name = f"{self.__name__}({', '.join(arg_names)})"
 
         # Build sealed module from output
-        result = Module.from_dict(name, raw, sig=self._output_sig, graph=self._graph)
+        result = Module.from_dict(name, raw, signature=self._output_signature, graph=self._graph)
         self._instances.append(result)
 
         # Record instantiation in graph
@@ -137,6 +137,6 @@ class _Functor:
         return list(self._instances)
 
     def __repr__(self) -> str:
-        in_s  = self._input_sig.__name__  if self._input_sig  else "any"
-        out_s = self._output_sig.__name__ if self._output_sig else "any"
+        in_s  = self._input_signature.__name__  if self._input_signature  else "any"
+        out_s = self._output_signature.__name__ if self._output_signature else "any"
         return f"<Functor {self.__name__!r} ({in_s}) → {out_s}>"

@@ -1,8 +1,8 @@
 """
-graphns/module.py — Signature-enforced module objects.
+graph_based_namespaces/module.py — Signature-enforced module objects.
 
 A Module wraps a Python module (or any dict of exports) and:
-  - enforces a Sig (if provided)
+  - enforces a Signature (if provided)
   - hides all private members (names starting with _)
   - exposes only declared-public members
   - supports qualified attribute access  (Math.add)
@@ -10,7 +10,7 @@ A Module wraps a Python module (or any dict of exports) and:
 
 This is the Python equivalent of:
 
-    module Math : MATH_SIG = struct ... end
+    module Math : MATH_SIGNATURE = struct ... end
 """
 from __future__ import annotations
 import importlib
@@ -20,8 +20,8 @@ import sys
 import types
 from typing import Any, Optional, Type
 
-from graphns.sig   import Sig, SigViolation
-from graphns.graph import (
+from graph_based_namespaces.signature   import Signature, SignatureViolation
+from graph_based_namespaces.graph import (
     Graph, NODE_MODULE, NODE_SYMBOL,
     REL_EXPORTS, REL_IMPORTS, REL_ALIAS_OF,
 )
@@ -50,13 +50,13 @@ class Module:
     def __init__(
         self,
         module_path:  str,
-        sig:          Optional[Type[Sig]] = None,
+        signature:          Optional[Type[Signature]] = None,
         alias:        Optional[str] = None,
         graph:        Optional[Graph] = None,
         package_root: Optional[str] = None,
     ) -> None:
         self._name  = alias or module_path
-        self._sig   = sig
+        self._signature   = signature
         self._graph = graph
 
         # Load the underlying Python module
@@ -71,8 +71,8 @@ class Module:
         }
 
         # Apply signature filter / check
-        if sig is not None:
-            self._exports = sig.check(raw_exports)
+        if signature is not None:
+            self._exports = signature.check(raw_exports)
         else:
             self._exports = raw_exports
 
@@ -85,21 +85,21 @@ class Module:
         cls,
         name:    str,
         exports: dict[str, Any],
-        sig:     Optional[Type[Sig]] = None,
+        signature:     Optional[Type[Signature]] = None,
         graph:   Optional[Graph] = None,
     ) -> "Module":
         """Create a module directly from a dict of exports (no file needed)."""
         obj = object.__new__(cls)
         obj._name        = name
-        obj._sig         = sig
+        obj._signature   = signature
         obj._graph       = graph
         obj._source_name = name
 
         # Exclude private names
         raw = {k: v for k, v in exports.items() if not k.startswith("_")}
 
-        if sig is not None:
-            obj._exports = sig.check(raw)
+        if signature is not None:
+            obj._exports = signature.check(raw)
         else:
             obj._exports = raw
 
@@ -136,9 +136,9 @@ class Module:
         return iter(self._exports)
 
     def __repr__(self) -> str:
-        sig_s = f" : {self._sig.__name__}" if self._sig else ""
+        signature_s = f" : {self._signature.__name__}" if self._signature else ""
         mems  = ", ".join(self._exports.keys())
-        return f"<Module {self._name!r}{sig_s} [{mems}]>"
+        return f"<Module {self._name!r}{signature_s} [{mems}]>"
 
     # ── Dict-like interface ───────────────────────────────────
 
@@ -152,7 +152,7 @@ class Module:
     # ── Graph registration ────────────────────────────────────
 
     def _register_graph(self, g: Graph, module_path: str, alias: Optional[str]) -> None:
-        g.add_node(self._name, NODE_MODULE, sig=self._sig.__name__ if self._sig else None)
+        g.add_node(self._name, NODE_MODULE, signature=self._signature.__name__ if self._signature else None)
         if module_path != self._name:
             g.record_import(self._name, module_path)
         if alias and alias != module_path:

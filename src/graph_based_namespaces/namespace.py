@@ -1,5 +1,5 @@
 """
-graphns/ns.py — The global graph namespace and context system.
+graph_based_namespaces/namespace.py — The global graph namespace and context system.
 
 This is the top-level controller that ties everything together:
   - a single program Graph
@@ -18,13 +18,13 @@ import inspect
 from contextlib import contextmanager
 from typing import Any, Callable, Iterator, Optional, Type
 
-from graphns.graph  import (
+from graph_based_namespaces.graph  import (
     Graph, Node,
     NODE_MODULE, NODE_CONTEXT, NODE_SYMBOL, NODE_FUNCTION,
     REL_EXPORTS, REL_IMPORTS, REL_MEMBER_OF, REL_MORPHISM,
 )
-from graphns.sig    import Sig
-from graphns.module import Module
+from graph_based_namespaces.signature    import Signature
+from graph_based_namespaces.module import Module
 
 
 # ── GraphContext ──────────────────────────────────────────────
@@ -43,7 +43,7 @@ class GraphContext:
         algo.add(sort_fn, "sort")
         algo.add(search_fn, "search")
 
-        sorting = namespace.intersect("Algorithm", "Arrays", name="Sorting")
+        sorting = namespace.intersection("Algorithm", "Arrays", name="Sorting")
     """
 
     def __init__(self, name: str, graph: Graph) -> None:
@@ -93,8 +93,8 @@ class Morphism:
           let where_ = filter
         end
 
-    graphns:
-        m = namespace.morphism("SqlToFP", src="SQL", tgt="Functional",
+    graph_based_namespaces:
+        m = namespace.morphism("SqlToFP", source="SQL", target="Functional",
                                mapping={"select": "map", "where_": "filter"})
         fp_filter = m.apply("where_")
     """
@@ -102,30 +102,30 @@ class Morphism:
     def __init__(
         self,
         name:    str,
-        src_ctx: GraphContext,
-        tgt_ctx: GraphContext,
+        source_Context: GraphContext,
+        target_Context: GraphContext,
         mapping: dict[str, str],
         graph:   Graph,
     ) -> None:
         self.name    = name
-        self._src    = src_ctx
-        self._tgt    = tgt_ctx
+        self._source    = source_Context
+        self._target    = target_Context
         self._map    = mapping
         self._g      = graph
-        graph.add_node(name, "morphism", src=src_ctx.name, tgt=tgt_ctx.name)
+        graph.add_node(name, "morphism", source=source_Context.name, target=target_Context.name)
         for s, t in mapping.items():
-            graph.add_edge(f"{src_ctx.name}.{s}", REL_MORPHISM, f"{tgt_ctx.name}.{t}",
+            graph.add_edge(f"{source_Context.name}.{s}", REL_MORPHISM, f"{target_Context.name}.{t}",
                            morphism=name)
 
-    def apply(self, src_name: str) -> Optional[Any]:
-        """Apply the morphism: look up src_name in src, return tgt value."""
-        tgt_name = self._map.get(src_name)
-        if tgt_name is None:
+    def apply(self, source_name: str) -> Optional[Any]:
+        """Apply the morphism: look up source_name in source, return target value."""
+        target_name = self._map.get(source_name)
+        if target_name is None:
             return None
-        return self._tgt.resolve(tgt_name)
+        return self._target.resolve(target_name)
 
     def __repr__(self) -> str:
-        return f"<Morphism {self.name!r}: {self._src.name} → {self._tgt.name}>"
+        return f"<Morphism {self.name!r}: {self._source.name} → {self._target.name}>"
 
 
 # ── Namespace ─────────────────────────────────────────────────
@@ -147,7 +147,7 @@ class Namespace:
         self._modules:  dict[str, Module]       = {}
         self._contexts: dict[str, GraphContext] = {}
         self._morphisms:dict[str, Morphism]     = {}
-        self._ctx_stack: list[str]              = []
+        self._context_stack: list[str]              = []
 
     # ── Module management ─────────────────────────────────────
 
@@ -165,7 +165,7 @@ class Namespace:
         self,
         module_path:  str,
         alias:        Optional[str]      = None,
-        sig:          Optional[Type[Sig]] = None,
+        signature:          Optional[Type[Signature]] = None,
         open_:        bool               = False,
         caller_ns:    Optional[dict]     = None,
     ) -> Module:
@@ -178,7 +178,7 @@ class Namespace:
             Dotted Python module path, e.g. "math" or "os.path".
         alias : str, optional
             Local name for the module (like `module M = Math` in OCaml).
-        sig : Sig subclass, optional
+        signature : Signature subclass, optional
             Signature to enforce. Only declared members are exposed.
         open_ : bool
             If True, inject all exports into caller_ns (like `open M` in OCaml).
@@ -192,14 +192,14 @@ class Namespace:
 
         Examples
         --------
-            Math = namespace.ocaml_import("math", alias="Math", sig=MathSig)
+            Math = namespace.ocaml_import("math", alias="Math", signature=MathSignature)
             Math.sqrt(16)
 
             namespace.ocaml_import("math", open_=True, caller_ns=globals())
             sqrt(16)   # now in scope
         """
         name = alias or module_path
-        mod  = Module(module_path, sig=sig, alias=name, graph=self.graph)
+        mod  = Module(module_path, signature=signature, alias=name, graph=self.graph)
         self._modules[name] = mod
 
         if open_ and caller_ns is not None:
@@ -232,11 +232,11 @@ class Namespace:
 
     def push_context(self, name: str) -> None:
         """Push a context onto the active resolution stack."""
-        self._ctx_stack.append(name)
+        self._context_stack.append(name)
 
     def pop_context(self) -> None:
-        if self._ctx_stack:
-            self._ctx_stack.pop()
+        if self._context_stack:
+            self._context_stack.pop()
 
     @contextmanager
     def active(self, *context_names: str) -> Iterator[None]:
@@ -260,12 +260,12 @@ class Namespace:
         Raises NameError on ambiguity.
         """
         candidates = []
-        for ctx_name in reversed(self._ctx_stack):
-            ctx = self._contexts.get(ctx_name)
-            if ctx:
-                val = ctx.resolve(name)
+        for context_name in reversed(self._context_stack):
+            context = self._contexts.get(context_name)
+            if context:
+                val = context.resolve(name)
                 if val is not None:
-                    candidates.append((ctx_name, val))
+                    candidates.append((context_name, val))
         if len(candidates) == 1:
             return candidates[0][1]
         if len(candidates) > 1:
@@ -276,48 +276,72 @@ class Namespace:
             )
         return None
 
-    # ── Context algebra ───────────────────────────────────────
+    # ── Context algebra (lazy) ────────────────────────────────
+    #
+    # All methods return a ContextExpression — nothing is evaluated until
+    # .members() or .resolve() is called on the result.
+    # Expressions can be freely composed before evaluation.
 
-    def union(self, a: str, b: str, name: str) -> GraphContext:
-        """result = a ∪ b"""
-        self.graph.ctx_union(a, b, name)
-        ctx = GraphContext(name, self.graph)
-        self._contexts[name] = ctx
-        return ctx
+    def expr(self, name: str) -> "ContextExpression":
+        """Lift a named context into a lazy ContextExpression."""
+        from graph_based_namespaces.context_expression import ContextReference
+        return ContextReference(name, self.graph)
 
-    def intersect(self, a: str, b: str, name: str) -> GraphContext:
-        """result = a ∩ b"""
-        self.graph.ctx_intersect(a, b, name)
-        ctx = GraphContext(name, self.graph)
-        self._contexts[name] = ctx
-        return ctx
+    def all_nodes(self, kind: Optional[str] = None) -> "ContextExpression":
+        """The universe — every node (optionally filtered by kind)."""
+        from graph_based_namespaces.context_expression import ContextAll
+        return ContextAll(self.graph, kind)
 
-    def diff(self, a: str, b: str, name: str) -> GraphContext:
-        """result = a − b"""
-        self.graph.ctx_diff(a, b, name)
-        ctx = GraphContext(name, self.graph)
-        self._contexts[name] = ctx
-        return ctx
+    def union(self, a: "str | ContextExpression", b: "str | ContextExpression") -> "ContextExpression":
+        """Lazy a ∪ b — evaluated when .members() is called."""
+        from graph_based_namespaces.context_expression import ContextUnion, _coerce
+        return ContextUnion(_coerce(a, self.graph), _coerce(b, self.graph))
+
+    def intersection(self, a: "str | ContextExpression", b: "str | ContextExpression") -> "ContextExpression":
+        """Lazy a ∩ b — evaluated when .members() is called."""
+        from graph_based_namespaces.context_expression import ContextIntersection, _coerce
+        return ContextIntersection(_coerce(a, self.graph), _coerce(b, self.graph))
+
+    def difference(self, a: "str | ContextExpression", b: "str | ContextExpression") -> "ContextExpression":
+        """Lazy a \\ b — evaluated when .members() is called."""
+        from graph_based_namespaces.context_expression import ContextDifference, _coerce
+        return ContextDifference(_coerce(a, self.graph), _coerce(b, self.graph))
+
+    def complement(self, a: "str | ContextExpression",
+                   within: "str | ContextExpression | None" = None) -> "ContextExpression":
+        """
+        Lazy NOT a — everything in `within` that isn't in `a`.
+
+        `within` defaults to the entire graph (ContextAll).
+        Pass a string or ContextExpression to restrict the universe:
+
+            ns.complement("A", within="B")   →  B \\ A
+            ns.complement("A")               →  all_nodes \\ A
+        """
+        from graph_based_namespaces.context_expression import ContextComplement, ContextAll, _coerce
+        universe = (ContextAll(self.graph) if within is None
+                    else _coerce(within, self.graph))
+        return ContextComplement(_coerce(a, self.graph), universe)
 
     # ── Morphisms ─────────────────────────────────────────────
 
     def morphism(
         self,
         name:    str,
-        src:     str,
-        tgt:     str,
+        source:     str,
+        target:     str,
         mapping: dict[str, str],
     ) -> Morphism:
         """
         Define a morphism between two contexts.
 
             m = namespace.morphism("SqlToFP",
-                    src="SQL", tgt="Functional",
+                    source="SQL", target="Functional",
                     mapping={"select": "map", "where_": "filter"})
         """
-        src_ctx = self.context(src)
-        tgt_ctx = self.context(tgt)
-        m = Morphism(name, src_ctx, tgt_ctx, mapping, self.graph)
+        source_Context = self.context(source)
+        target_Context = self.context(target)
+        m = Morphism(name, source_Context, target_Context, mapping, self.graph)
         self._morphisms[name] = m
         return m
 
@@ -338,9 +362,9 @@ class Namespace:
 
     def summary(self) -> str:
         mods  = len(self._modules)
-        ctxs  = len(self._contexts)
+        Contexts  = len(self._contexts)
         morps = len(self._morphisms)
-        return (f"Namespace: {mods} modules, {ctxs} contexts, "
+        return (f"Namespace: {mods} modules, {Contexts} contexts, "
                 f"{morps} morphisms | {self.graph.summary()}")
 
     def print_graph(self, **kw) -> None:
@@ -361,7 +385,7 @@ def _inject(exports: dict[str, Any], ns: dict) -> None:
 def open_module(
     source: "str | Module",
     caller_ns: Optional[dict] = None,
-    sig: Optional[Type[Sig]] = None,
+    signature: Optional[Type[Signature]] = None,
 ) -> Module:
     """
     Standalone `open_module()` — load and inject a module's exports.
@@ -372,7 +396,7 @@ def open_module(
         Module path string or an existing Module object.
     caller_ns : dict, optional
         Namespace to inject into. If None, uses the caller's globals().
-    sig : Sig subclass, optional
+    signature : Signature subclass, optional
         Signature to enforce.
 
     Examples
@@ -380,7 +404,7 @@ def open_module(
         open_module("math", globals())
         print(sqrt(16))   # 4.0
 
-        open_module("math", globals(), sig=MathSig)
+        open_module("math", globals(), signature=MathSignature)
     """
     if caller_ns is None:
         frame = inspect.currentframe()
@@ -388,7 +412,7 @@ def open_module(
             caller_ns = frame.f_back.f_globals
 
     if isinstance(source, str):
-        mod = Module(source, sig=sig, graph=namespace.graph)
+        mod = Module(source, signature=signature, graph=namespace.graph)
     else:
         mod = source
 

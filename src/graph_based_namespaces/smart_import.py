@@ -1,5 +1,5 @@
 """
-graphns/smart.py — Upgraded smart_import, now graph-aware.
+graph_based_namespaces/smart.py — Upgraded smart_import, now graph-aware.
 
 Drop-in replacement for the original smart_import() from
 python-smart-imports.  It handles the script-vs-package path problem
@@ -17,19 +17,19 @@ import os
 import sys
 from typing import Any, Optional, Type
 
-from graphns.sig   import Sig
-from graphns.graph import Graph, NODE_MODULE, REL_IMPORTS
-from graphns.module import Module
+from graph_based_namespaces.signature   import Signature
+from graph_based_namespaces.graph       import Graph, NODE_MODULE, REL_IMPORTS
+from graph_based_namespaces.module      import Module
 
 
 def smart_import(
     module_path:  str,
-    package_root: Optional[str]      = None,
-    sig:          Optional[Type[Sig]] = None,
-    alias:        Optional[str]      = None,
-    open_:        bool               = False,
-    graph:        Optional[Graph]    = None,
-    caller_ns:    Optional[dict]     = None,
+    package_root: Optional[str]             = None,
+    signature:    Optional[Type[Signature]] = None,
+    alias:        Optional[str]             = None,
+    open_:        bool                      = False,
+    graph:        Optional[Graph]           = None,
+    caller_ns:    Optional[dict]            = None,
 ) -> Module:
     """
     Intelligently import a module whether running as a script or package.
@@ -43,10 +43,10 @@ def smart_import(
         helpers = smart_import("myproject.utils.helpers")
         helpers.foo()
 
-    Extended features (new in graphns):
+    Extended features (new in graph_based_namespaces):
 
         # Signature enforcement:
-        helpers = smart_import("myproject.utils.helpers", sig=HelpersSig)
+        helpers = smart_import("myproject.utils.helpers", signature=HelpersSignature)
 
         # Module aliasing (OCaml style):
         H = smart_import("myproject.utils.helpers", alias="H")
@@ -64,7 +64,7 @@ def smart_import(
         Dotted Python module path.
     package_root : str, optional
         Override auto-detected package root.
-    sig : Sig subclass, optional
+    signature : Signature subclass, optional
         Signature to enforce; only declared members are exposed.
     alias : str, optional
         Local name for the module.
@@ -102,11 +102,11 @@ def smart_import(
             sys.path.insert(0, package_root)
 
     # ── Load ──────────────────────────────────────────────────
-    from graphns.ns import namespace as _ns
+    from graph_based_namespaces.namespace import namespace as _ns
     active_graph = graph or _ns.graph
 
     name = alias or module_path
-    mod  = Module(module_path, sig=sig, alias=name, graph=active_graph)
+    mod  = Module(module_path, signature=signature, alias=name, graph=active_graph)
 
     # Record caller → importee edge
     if caller_name and caller_name != "__main__":

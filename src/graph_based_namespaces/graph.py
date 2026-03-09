@@ -1,5 +1,5 @@
 """
-graphns/graph.py — The program graph.
+graph_based_namespaces/graph.py — The program graph.
 
 Every module, function, type, variable, and import is a node.
 Relationships (defines, calls, imports, exports, alias_of, uses, morphism)
@@ -25,7 +25,7 @@ NODE_CLASS     = "class"
 NODE_VARIABLE  = "variable"
 NODE_SYMBOL    = "symbol"
 NODE_CONTEXT   = "context"    # graph context (semantic region)
-NODE_SIG       = "signature"
+NODE_SIGNATURE = "signature"
 NODE_ALIAS     = "alias"
 NODE_FUNCTOR   = "functor"
 
@@ -56,13 +56,13 @@ class Node:
 
 @dataclass
 class Edge:
-    src:      str
+    source:      str
     relation: str
     dst:      str
     meta:     dict = field(default_factory=dict)
 
     def __repr__(self) -> str:
-        return f"{self.src!r} --{self.relation}--> {self.dst!r}"
+        return f"{self.source!r} --{self.relation}--> {self.dst!r}"
 
 
 class Graph:
@@ -78,9 +78,9 @@ class Graph:
         self._out:   dict[str, list[Edge]]      = defaultdict(list)
         self._in:    dict[str, list[Edge]]      = defaultdict(list)
         # context membership: context_name -> set of node names
-        self._ctx_members: dict[str, set[str]]  = defaultdict(set)
+        self._context_members: dict[str, set[str]]  = defaultdict(set)
         # membership index: node_name -> set of context names
-        self._node_ctxs:   dict[str, set[str]]  = defaultdict(set)
+        self._node_contexts:   dict[str, set[str]]  = defaultdict(set)
 
     # ── Node management ───────────────────────────────────────
 
@@ -98,14 +98,14 @@ class Graph:
 
     # ── Edge management ───────────────────────────────────────
 
-    def add_edge(self, src: str, relation: str, dst: str, **meta) -> Edge:
-        e = Edge(src, relation, dst, dict(meta))
-        self._out[src].append(e)
+    def add_edge(self, source: str, relation: str, dst: str, **meta) -> Edge:
+        e = Edge(source, relation, dst, dict(meta))
+        self._out[source].append(e)
         self._in[dst].append(e)
         return e
 
-    def edges_from(self, src: str, relation: Optional[str] = None) -> list[Edge]:
-        es = self._out.get(src, [])
+    def edges_from(self, source: str, relation: Optional[str] = None) -> list[Edge]:
+        es = self._out.get(source, [])
         return [e for e in es if e.relation == relation] if relation else list(es)
 
     def edges_to(self, dst: str, relation: Optional[str] = None) -> list[Edge]:
@@ -114,17 +114,17 @@ class Graph:
 
     # ── Context / graph-namespace membership ──────────────────
 
-    def add_to_context(self, node_name: str, ctx_name: str) -> None:
-        self._ctx_members[ctx_name].add(node_name)
-        self._node_ctxs[node_name].add(ctx_name)
-        self.add_edge(node_name, REL_MEMBER_OF, ctx_name)
+    def add_to_context(self, node_name: str, context_name: str) -> None:
+        self._context_members[context_name].add(node_name)
+        self._node_contexts[node_name].add(context_name)
+        self.add_edge(node_name, REL_MEMBER_OF, context_name)
 
-    def members_of(self, ctx_name: str) -> list[Node]:
-        return [self._nodes[n] for n in self._ctx_members.get(ctx_name, set())
+    def members_of(self, context_name: str) -> list[Node]:
+        return [self._nodes[n] for n in self._context_members.get(context_name, set())
                 if n in self._nodes]
 
     def contexts_of(self, node_name: str) -> list[Node]:
-        return [self._nodes[c] for c in self._node_ctxs.get(node_name, set())
+        return [self._nodes[c] for c in self._node_contexts.get(node_name, set())
                 if c in self._nodes]
 
     # ── Convenience builders ──────────────────────────────────
@@ -164,12 +164,12 @@ class Graph:
     def analyse_object(self, obj: Any) -> None:
         """Analyse a live Python object (function, class, module)."""
         try:
-            src = inspect.getsource(obj)
+            source = inspect.getsource(obj)
         except (TypeError, OSError):
             return
         mod = getattr(obj, "__module__", "<unknown>")
         self.add_node(mod, NODE_MODULE)
-        self.analyse_source(src, mod)
+        self.analyse_source(source, mod)
 
     # ── Queries ───────────────────────────────────────────────
 
@@ -183,11 +183,11 @@ class Graph:
 
     def dependents(self, name: str) -> list[str]:
         """Nodes that depend on this one."""
-        return [e.src for e in self.edges_to(name)
+        return [e.source for e in self.edges_to(name)
                 if e.relation in (REL_IMPORTS, REL_CALLS, REL_USES)]
 
     def callers_of(self, name: str) -> list[str]:
-        return [e.src for e in self.edges_to(name, REL_CALLS)]
+        return [e.source for e in self.edges_to(name, REL_CALLS)]
 
     def callees_of(self, name: str) -> list[str]:
         return [e.dst for e in self.edges_from(name, REL_CALLS)]
@@ -220,22 +220,22 @@ class Graph:
 
     # ── Context algebra ───────────────────────────────────────
 
-    def ctx_union(self, a: str, b: str, result: str) -> None:
+    def context_union(self, a: str, b: str, result: str) -> None:
         """result = a ∪ b"""
         self.add_node(result, NODE_CONTEXT)
-        for m in self._ctx_members.get(a, set()) | self._ctx_members.get(b, set()):
+        for m in self._context_members.get(a, set()) | self._context_members.get(b, set()):
             self.add_to_context(m, result)
 
-    def ctx_intersect(self, a: str, b: str, result: str) -> None:
+    def context_intersection(self, a: str, b: str, result: str) -> None:
         """result = a ∩ b"""
         self.add_node(result, NODE_CONTEXT)
-        for m in self._ctx_members.get(a, set()) & self._ctx_members.get(b, set()):
+        for m in self._context_members.get(a, set()) & self._context_members.get(b, set()):
             self.add_to_context(m, result)
 
-    def ctx_diff(self, a: str, b: str, result: str) -> None:
+    def context_difference(self, a: str, b: str, result: str) -> None:
         """result = a − b"""
         self.add_node(result, NODE_CONTEXT)
-        for m in self._ctx_members.get(a, set()) - self._ctx_members.get(b, set()):
+        for m in self._context_members.get(a, set()) - self._context_members.get(b, set()):
             self.add_to_context(m, result)
 
     # ── Display ───────────────────────────────────────────────
